@@ -1,3 +1,17 @@
+import pygame as py
+import _thread
+import time
+import tkinter as tk
+from tkinter import *
+import cv2
+from PIL import Image, ImageTk
+import multiprocessing
+import os
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+from freetype import *
+from PIL import ImageFont,ImageDraw,Image
 import keras.backend as K
 from keras.layers import Flatten, Dense, BatchNormalization
 from keras.models import Model
@@ -17,21 +31,22 @@ gc.collect()
 import tensorflow as tf
 from tensorflow.python.training import moving_averages
 from torch.nn import functional as F
-import os
-import numpy as np
-import cv2
 import matplotlib.pyplot as plt
 from freetype import *
 from PIL import ImageFont,ImageDraw,Image
 
-
-
-
-
+window_width = 960
+window_height = 720
+image_width = 720
+image_height = 480
+imagepos_x = 0
+imagepos_y = 0
+butpos_x = 450
+butpos_y = 450
 
 model_urls = {
-    'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
-}
+        'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
+    }
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -137,98 +152,154 @@ def resnet18(pretrained=False):
     return model
 
 
-
-
 def input_transform():
     return Compose([
-                #Grayscale(num_output_channels=1),
-                Resize((224,224)),   #改变尺寸
-                ToTensor(),      #变成tensor
-                RandomHorizontalFlip(),
-                ])
-
-
-
-BATCH_SIZE = 10
-
-data=dset.ImageFolder(root=r"D:\newdir\sjj\American Sign Language Letters.v1-v1.yolov5pytorch\train1",transform=input_transform())
-test_data=dset.ImageFolder(root=r"D:\newdir\sjj\American Sign Language Letters.v1-v1.yolov5pytorch\test1",transform=input_transform())
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print('device:', device)
-
-
-loader=torch.utils.data.DataLoader(dataset=data,batch_size=BATCH_SIZE,shuffle=True,num_workers=0)#训练集
-
-# train_loader=torch.utils.data.DataLoader(dataset=train,batch_size=BATCH_SIZE,shuffle=True,num_workers=0)#训练集
-test_loader=torch.utils.data.DataLoader(dataset=test_data,batch_size=BATCH_SIZE,shuffle=True,num_workers=0)#测试集
+        # Grayscale(num_output_channels=1),
+        Resize((224, 224)),  # 改变尺寸
+        ToTensor(),  # 变成tensor
+        RandomHorizontalFlip(),
+    ])
 
 
 
 
+# 图像转换，用于在画布中显示
+def tkImage(vc):
+    ref, frame = vc.read()
+    cvimage = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    pilImage = Image.fromarray(cvimage)
+    pilImage = pilImage.resize((image_width, image_height), Image.ANTIALIAS)
+    tkImage = ImageTk.PhotoImage(image=pilImage)
+    return tkImage
+
+# 图像的显示与更新
+def video():
+    def video_loop():
+        try:
+            while True:
+                picture1 = tkImage(vc1)
+                canvas1.create_image(0, 0, anchor='nw', image=picture1)
+                win.update_idletasks()  # 最重要的更新是靠这两句来实现
+                win.update()
+        except:
+            pass
+
+    video_loop()
+    win.mainloop()
+    vc1.release()
+    cv2.destroyAllWindows()
+
+def hit():
+    global vc1,e
+
+    videofile_path = e.get()
+    videos = os.listdir(videofile_path)
+    for video_name in videos:
+        file_name = video_name.split('.')[0]  # 视频文件名
+        # print(file_name)
+        folder_name = videofile_path + '/' + file_name
+        # print(folder_name)
+        os.makedirs(folder_name, exist_ok=True)  # 创建与视频同名目录保存截取的图片
+        # print(videofile_path + video_name)
+    # print(videofile_path + video_name)
+
+    cap = cv2.VideoCapture(videofile_path + '/' + video_name)
+    fps = int(cap.get(cv2.CAP_PROP_FPS))  # 获取视频每秒的帧数
+    print("fps: ", fps)
+    num = 0
+    cnt = 0  # 帧计数
+    time = 200  # 保存帧间隔
+    if cap.isOpened():
+        while True:
+            ret, img = cap.read()  # img 就是一帧图片
+            # print(ret,img)
+            pic_path = folder_name + '//'
+            # print(folder_name)
+            if ret and cnt % time == 0:
+                num = num + 1
+                # print(1)
+                pic_name = str('%04d' % num) + '.jpg'
+                # print(pic_name)
+                # print(pic_path + pic_name)  # 打印生成的路径名
+                cv2.imencode('.jpg', img)[1].tofile(pic_path + pic_name)
+                cv2.waitKey(1)
+            # cv2.imshow('pic1',img)
+            # 可以用 cv2.imshow() 查看这一帧，也可以逐帧保存
+            if cnt > 5000:
+                break
+            cnt = cnt + 1
+        cap.release()
+        cv2.destroyAllWindows()
+    else:
+        print('视频打开失败！')
 
 
 
 
 
+    BATCH_SIZE = 10
+
+    test_data = dset.ImageFolder(root=videofile_path, transform=input_transform())
+
+    test_loader = torch.utils.data.DataLoader(dataset=test_data, batch_size=BATCH_SIZE, shuffle=True,
+                                              num_workers=0)  # 测试集
+
+    net = torch.load('D:/newdir\sjj\American Sign Language Letters.v1-v1.yolov5pytorch\model/model8.pth',
+                     map_location=torch.device('cpu'))
+
+    result = []
+    for batch in test_loader:  # GetBatch
+        images, labels = batch
+        outs = net(images)  # PassBatch
+        _, pre = torch.max(outs.data, 1)
+        result += pre.numpy().tolist()
+
+    # picfile_path=videofile_path+file_name
+    picfile_path = videofile_path + '/' + file_name
+    pics = os.listdir(picfile_path)
+    # print(pics)
+    word = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u',
+            'v', 'w', 'x', 'y', 'z']
+    for pic_name in pics:
+        file_name1 = pic_name.split('.')[1]  # 测试完成后的文件名
+        # print(file_name1)
+        folder_name1 = picfile_path + file_name1
+        # print(folder_name1)
+        os.makedirs(folder_name1, exist_ok=True)  # 创建与测试完成后的文件夹同名目录保存截取的图片
+
+    # print(picfile_path+file_name1)
 
 
-net  = resnet18().to(device)
-
-#net=torch.load('D:/newdir\sjj\American Sign Language Letters.v1-v1.yolov5pytorch\model/model8.pth',map_location=torch.device('cpu'))
-
-optimizer=optim.SGD(net.parameters(),lr=0.1,weight_decay=0.01)
-
-
-
-#
-optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
-loss_func = torch.nn.CrossEntropyLoss().to(device)
-for epoch in range(50):
-    correct = 0
-    total = 0
-    for step, (batch_x, batch_y) in enumerate(loader):
-        b_x = Variable(batch_x).to(device)
-        b_y = Variable(batch_y).to(device)
-        predict = net(b_x).to(device)
-        loss = loss_func(predict, b_y)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        _, predicted = torch.max(predict.data, 1)
-        total += batch_y.size(0)
-        correct += (predicted == b_y).sum()
-
-        if step % 50 == 0:
-            print('epoch:{}, step:{}, loss:{}, acc:{}'.format(epoch, step, loss, correct/total))
-
-torch.save(net,'D:/newdir\sjj\American Sign Language Letters.v1-v1.yolov5pytorch\model/model8.pth')
-
-# correct = 0
-# total = 0
-# for step, (batch_x, batch_y) in enumerate(test_loader):
-#
-#     #batch_x = Variable(torch.unsqueeze(batch_x, dim=0).float(), requires_grad=False)
-#     #print(batch_x.shape)
-#     b_x = Variable(batch_x)
-#     b_y = Variable(batch_y)
-#
-#
-#
-#     predict = net(b_x)
-#
-#     _, predicted = torch.max(predict.data, 1)
-#     total += batch_y.size(0)
-#     #total += 1
-#     correct += (predicted == b_y).sum()
-#     result += predicted.numpy().tolist()
-#print(' step:{},  acc:{}'.format(step, correct / total))
-result=[]
-for batch in test_loader:  # GetBatch
-    images, labels = batch
-    outs = net(images)  # PassBatch
-    _, pre = torch.max(outs.data, 1)
-    result += pre.numpy().tolist()
+    cnt = 1
+    for i in range(len(pics)):
+        picname = picfile_path + '/' + pics[i]
+        print(i)
+        image = Image.open(picname)
+        # print(image)
+        font = ImageFont.truetype('consola.ttf', 90)  # 设置字体及字号
+        drawobj = ImageDraw.Draw(image)
+        text = word[result[i]]  # 列表索引即可
+        # 位置 文本 颜色
+        drawobj.text([0, 0], text, 'red', font)
+        # image.show()
+        image.save(picfile_path + file_name1 + '/' + pics[i])  # 保存路径
+        cnt = cnt + 1
 
 
-print(len(result))
+    os.system(f'ffmpeg -loop 1 -f image2 -i ' + folder_name1 + '/%04d.jpg -vcodec libx264 -r 10 -t 30 D:/newdir/shouyu/test1.mp4')
+
+    vc1=cv2.VideoCapture(videofile_path+'/test1.mp4')
+    video()
+
+'''布局'''
+win = tk.Tk()
+win.geometry('1000x700')
+canvas1 = Canvas(win, bg='white', width=image_width, height=image_height)
+canvas1.pack(side='bottom')
+
+e=tk.Entry(win)
+e.pack(side='top')
+
+b=tk.Button(win,text='开始',width=15,height=2,command=hit).pack(side='top')
+
+win.mainloop()
